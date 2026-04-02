@@ -1,0 +1,155 @@
+{
+  "_comment": "Active client is selected by 'active.hosting' + 'active.model'. Use 'hosting/model' format in code.",
+
+  "models": {
+    "active": {
+      "hosting": "ollama",
+      "model": "gemma3-4b"
+    },
+    "defaults": {
+      "max_tokens": 4096,
+      "temperature": 0.3,
+      "top_p": 1.0
+    },
+    "hostings": {
+
+      "_comment_api": "── Cloud API providers ─────────────────────────────────────────",
+
+      "gemini": {
+        "backend": "gemini",
+        "api_key_env": "GEMINI_API_KEY",
+        "thinking_budget": 0,
+        "models": [
+          { "name": "gemini-flash-2.5lite",   "model_id": "gemini-2.5-flash-lite" },
+          { "name": "gemini-flash-2.5", "model_id": "gemini-2.5-flash" }
+        ]
+      },
+
+      "gemini_compat": {
+        "_comment": "Gemini accessed via its OpenAI-compatible endpoint",
+        "backend": "openai",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "api_key_env": "GEMINI_API_KEY",
+        "models": [
+             { "name": "gemini-flash-2.5lite",   "model_id": "gemini-2.5-flash-lite" },
+             { "name": "gemini-flash-2.5", "model_id": "gemini-2.5-flash" }
+        ]
+      },
+
+      "openai": {
+        "backend": "openai",
+        "base_url": "https://api.openai.com/v1",
+        "api_key_env": "OPENAI_API_KEY",
+        "models": [
+          { "name": "gpt-4o",      "model_id": "gpt-4o" },
+          { "name": "gpt-4o-mini", "model_id": "gpt-4o-mini" }
+        ]
+      },
+
+      "anthropic": {
+        "_comment": "Claude via Anthropic's OpenAI-compatible endpoint",
+        "backend": "openai",
+        "base_url": "https://api.anthropic.com/v1",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "models": [
+          { "name": "claude-sonnet", "model_id": "claude-sonnet-4-20250514" }
+        ]
+      },
+
+      "_comment_local": "── Local inference servers (all use OpenAI-compatible API) ─────",
+
+      "ollama": {
+        "backend": "openai",
+        "base_url": "http://localhost:11434/v1",
+        "api_key_env": null,
+        "models": [
+          { "name": "gemma3-4b",   "model_id": "gemma3:4b" },
+          { "name": "gemma3-12b",  "model_id": "gemma3:12b" },
+          { "name": "qwen3vl-4b",  "model_id": "qwen3-vl:4b" },
+          { "name": "qwen3vl-8b",  "model_id": "qwen3-vl:8b" }
+        ]
+      },
+
+      "mlx_vlm": {
+        "backend": "openai",
+        "base_url": "http://localhost:8080/v1",
+        "api_key_env": null,
+        "models": [
+          { "name": "gemma3-4b",   "model_id": "mlx-community/gemma-3-4b-it-4bit" },
+          { "name": "gemma3-12b",  "model_id": "mlx-community/gemma-3-12b-it-qat-4bit" },
+          { "name": "qwen3vl-4b",  "model_id": "mlx-community/Qwen3-VL-4B-Instruct-4bit" },
+          { "name": "qwen3vl-8b",  "model_id": "mlx-community/Qwen3-VL-8B-Instruct-8bit" }
+        ]
+      },
+
+      "vllm": {
+        "_comment": "Planned — uses same HuggingFace model IDs as transformers",
+        "backend": "openai",
+        "base_url": "http://localhost:8000/v1",
+        "api_key_env": null,
+        "models": [
+          { "name": "gemma3-4b",   "model_id": "google/gemma-3-4b-it" },
+          { "name": "gemma3-12b",  "model_id": "google/gemma-3-12b-it" },
+          { "name": "qwen3vl-4b",  "model_id": "Qwen/Qwen3-VL-4B-Instruct" },
+          { "name": "qwen3vl-8b",  "model_id": "Qwen/Qwen3-VL-8B-Instruct" }
+        ]
+      },
+
+      "_comment_inproc": "── In-process inference (no server required) ───────────────────",
+
+      "transformers": {
+        "backend": "transformer",
+        "api_key_env": null,
+        "quantization_level": null,
+        "models": [
+          { "name": "gemma3-4b",   "model_id": "google/gemma-3-4b-it" },
+          { "name": "gemma3-12b",  "model_id": "google/gemma-3-12b-it" },
+          { "name": "qwen3vl-4b",  "model_id": "Qwen/Qwen3-VL-4B-Instruct" },
+          { "name": "qwen3vl-8b",  "model_id": "Qwen/Qwen3-VL-8B-Instruct" }
+        ]
+      }
+
+    }
+  },
+
+  "processing": {
+    "batch_size": 1,
+    "max_images": null,
+    "save_intermediate": true,
+    "output_format": "jsonl"
+  },
+
+  "datasets": {
+    "vizsum": {
+      "name": "vizsum",
+      "root_dir": "input/vizsum",
+      "output_dir": "output/vizsum"
+    }
+  },
+
+  "prompts": {
+    "prompt_root": "src/prompts",
+    "workflows": {
+      "basic_captioning": {
+        "steps": [
+          {
+            "system": "",
+            "user": "basic_captioning/step1_user.txt"
+          }
+        ]
+      },
+      "chain_of_thought": {
+        "steps": [
+          {
+            "system": "",
+            "user": "chain_of_thought/step1_user.txt"
+          },
+          {
+            "system": "",
+            "user": "chain_of_thought/step2_user.txt"
+          }
+        ]
+      }
+    }
+  }
+}

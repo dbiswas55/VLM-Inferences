@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Environment & secrets
+.env
+
+# Virtual environment
+venv*/
+
+# Input data (images, slides, etc.)
+input/
+
+# Python
+__pycache__/
+*.py[cod]
