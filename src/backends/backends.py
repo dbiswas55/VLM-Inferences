@@ -253,15 +253,15 @@ class TransformersBackend(BaseBackend):
         actual_dtype = next(self._model.parameters()).dtype
         print(f"[{self.name}] Model loaded on {self.device} | dtype: {actual_dtype}\n")
 
-    def _image_content_entry(self, image: Image.Image) -> dict:
-        if "qwen" in self.hf_model_id.lower() and "vl" in self.hf_model_id.lower():
-            return {"type": "image", "image": image}
-        return {"type": "image"}
-
     def run(self, request: InferenceRequest) -> str:
         """Generate text output using local Transformers model."""
         import torch
         self._ensure_loaded()
+
+        # Qwen3-VL expects images embedded directly in content entries.
+        # All other models (e.g. Gemma3) want a plain placeholder and images
+        # passed separately through the processor's `images` kwarg.
+        is_qwen_vl = "qwen" in self.hf_model_id.lower() and "vl" in self.hf_model_id.lower()
         all_pil_images: list[Image.Image] = []
         content_list: list[dict] = []
 
@@ -270,8 +270,11 @@ class TransformersBackend(BaseBackend):
                 content_list.append({"type": "text", "text": block.text})
             elif isinstance(block, ImageBlock):
                 pil = block.load()
-                all_pil_images.append(pil)
-                content_list.append(self._image_content_entry(pil))
+                if is_qwen_vl:
+                    content_list.append({"type": "image", "image": pil})
+                else:
+                    all_pil_images.append(pil)
+                    content_list.append({"type": "image"})
 
         messages: list[dict] = []
         if request.system_prompt:
