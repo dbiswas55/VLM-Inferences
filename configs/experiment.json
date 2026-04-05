@@ -85,7 +85,7 @@
       "vllm": {
         "_comment": "Planned — uses same HuggingFace model IDs as transformers",
         "backend": "openai",
-        "base_url": "http://localhost:8000/v1",
+        "base_url": "http://127.0.0.1:8000/v1",
         "api_key_env": null,
         "models": [
           { "name": "gemma3-4b",   "model_id": "google/gemma-3-4b-it" },

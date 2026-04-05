@@ -154,6 +154,7 @@ class TransformersBackend(BaseBackend):
         self.device = self._pick_device()
         self._model = None
         self._processor = None
+        self._use_device_map: bool = False
 
         self.torch_dtype = self._pick_torch_dtype()
 
@@ -231,22 +232,27 @@ class TransformersBackend(BaseBackend):
             f"(dtype={self.torch_dtype}, quantization={self.quantization_level}) …"
         )
 
-        quantization_config = self._build_quantization_config()
         load_kwargs = {
             "token": self.hf_token,
             "cache_dir": self.hf_cache,
             "dtype": self.torch_dtype,
             "trust_remote_code": True,
         }
-        if quantization_config is not None:
+
+        if self.device == "cuda":
             load_kwargs["device_map"] = "auto"
-            load_kwargs["quantization_config"] = quantization_config
+            quantization_config = self._build_quantization_config()
+            if quantization_config is not None:
+                load_kwargs["quantization_config"] = quantization_config
+            self._use_device_map = True
+        else:
+            self._use_device_map = False
 
         self._model = AutoModelForImageTextToText.from_pretrained(
             self.hf_model_id,
             **load_kwargs,
         )
-        if quantization_config is None:
+        if not self._use_device_map:
             self._model = self._model.to(self.device)
 
         self._model.eval()
@@ -285,7 +291,8 @@ class TransformersBackend(BaseBackend):
         processor_kwargs: dict = {"text": [text], "return_tensors": "pt"}
         if all_pil_images:
             processor_kwargs["images"] = all_pil_images
-        inputs = self._processor(**processor_kwargs).to(self.device)
+        input_device = "cuda:0" if (self._use_device_map and self.device == "cuda") else self.device
+        inputs = self._processor(**processor_kwargs).to(input_device)
 
         generation_kwargs = {
             "max_new_tokens": request.max_new_tokens,

@@ -24,7 +24,7 @@ IMAGE_PATHS = [
 ]
 
 SYSTEM_PROMPT = ""
-USER_PROMPT = "Describe the two images and then summarize the main information shown."
+USER_PROMPT = "Summarize all the above slides and provide the main information shown."
 
 
 def get_client(cfg: Config, debug: bool = False) -> dict:
@@ -71,6 +71,7 @@ def build_request_payload(
         if not path.is_file():
             raise FileNotFoundError(f"Image file not found: {image_path}")
         content.append(ImageBlock(str(path)))
+        content.append(TextBlock("Describe this slide briefly."))
 
     content.append(TextBlock(prompt))
     return {"content": content, "system_prompt": system_prompt}
