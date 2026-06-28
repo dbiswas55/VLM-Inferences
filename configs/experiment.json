@@ -16,23 +16,37 @@
       "_comment_api": "── Cloud API providers ─────────────────────────────────────────",
 
       "gemini": {
+        "_comment": "Gemini native SDK via Google AI Studio (API key)",
         "backend": "gemini",
         "api_key_env": "GEMINI_API_KEY",
-        "thinking_budget": 0,
         "models": [
-          { "name": "gemini-flash-2.5lite",   "model_id": "gemini-2.5-flash-lite" },
-          { "name": "gemini-flash-2.5", "model_id": "gemini-2.5-flash" }
+          { "name": "flash-2.5lite", "model_id": "gemini-2.5-flash-lite", "thinking_budget": 0 },
+          { "name": "flash-2.5",     "model_id": "gemini-2.5-flash", "thinking_budget": 0 },
+          { "name": "pro-2.5",       "model_id": "gemini-2.5-pro", "thinking_budget": -1, "max_tokens": null }
         ]
       },
 
-      "gemini_compat": {
-        "_comment": "Gemini accessed via its OpenAI-compatible endpoint",
+      "gemini_vtx": {
+        "_comment": "Gemini native SDK via Vertex AI (uses Application Default Credentials)",
+        "backend": "gemini",
+        "vertexai_project_env": "GCP_PROJECT",
+        "vertexai_location_env": "GCP_LOCATION",
+        "models": [
+          { "name": "flash-2.5lite", "model_id": "gemini-2.5-flash-lite", "thinking_budget": 0 },
+          { "name": "flash-2.5",     "model_id": "gemini-2.5-flash", "thinking_budget": 0 },
+          { "name": "pro-2.5",       "model_id": "gemini-2.5-pro", "thinking_budget": -1, "max_tokens": null }
+        ]
+      },
+
+      "gemini_oai": {
+        "_comment": "Gemini via OpenAI-compatible endpoint (Google AI Studio)",
         "backend": "openai",
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
         "api_key_env": "GEMINI_API_KEY",
         "models": [
-             { "name": "gemini-flash-2.5lite",   "model_id": "gemini-2.5-flash-lite" },
-             { "name": "gemini-flash-2.5", "model_id": "gemini-2.5-flash" }
+          { "name": "flash-2.5lite", "model_id": "gemini-2.5-flash-lite" },
+          { "name": "flash-2.5",     "model_id": "gemini-2.5-flash" },
+          { "name": "pro-2.5",       "model_id": "gemini-2.5-pro", "max_tokens": null }
         ]
       },
 
@@ -61,7 +75,6 @@
       "ollama": {
         "backend": "openai",
         "base_url": "http://localhost:11434/v1",
-        "api_key_env": null,
         "models": [
           { "name": "gemma3-4b",   "model_id": "gemma3:4b" },
           { "name": "gemma3-12b",  "model_id": "gemma3:12b" },
@@ -73,7 +86,6 @@
       "mlx_vlm": {
         "backend": "openai",
         "base_url": "http://localhost:8080/v1",
-        "api_key_env": null,
         "models": [
           { "name": "gemma3-4b",   "model_id": "mlx-community/gemma-3-4b-it-4bit" },
           { "name": "gemma3-12b",  "model_id": "mlx-community/gemma-3-12b-it-qat-4bit" },
@@ -85,8 +97,7 @@
       "vllm": {
         "_comment": "Planned — uses same HuggingFace model IDs as transformers",
         "backend": "openai",
-        "base_url": "http://127.0.0.1:8000/v1",
-        "api_key_env": null,
+        "base_url": "http://localhost:8000/v1",
         "models": [
           { "name": "gemma3-4b",   "model_id": "google/gemma-3-4b-it" },
           { "name": "gemma3-12b",  "model_id": "google/gemma-3-12b-it" },
@@ -98,8 +109,7 @@
       "_comment_inproc": "── In-process inference (no server required) ───────────────────",
 
       "transformers": {
-        "backend": "transformer",
-        "api_key_env": null,
+        "backend": "transformers",
         "quantization_level": null,
         "models": [
           { "name": "gemma3-4b",   "model_id": "google/gemma-3-4b-it" },

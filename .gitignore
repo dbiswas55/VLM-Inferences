@@ -7,8 +7,9 @@
 # Virtual environment
 venv*/
 
-# Input data (images, slides, etc.)
+# Files and Folders to ignore
 input/
+output/
 
 # Python
 __pycache__/

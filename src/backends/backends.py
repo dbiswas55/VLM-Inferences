@@ -4,8 +4,16 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+import torch
 from PIL import Image
 from .request import ImageBlock, InferenceRequest, TextBlock
+
+# Model ID substrings that use the inline-image content style
+# (image dict embedded inside the content list rather than passed via images= kwarg).
+# Add a substring here to support any new model family without touching run() logic.
+_INLINE_IMAGE_MODEL_PATTERNS: frozenset[str] = frozenset([
+    "qwen", "internvl",      # Qwen2-VL, Qwen3-VL, and future Qwen VL variants
+])
 
 
 # ── Base ──────────────────────────────────────────────────────────────────────
@@ -16,8 +24,8 @@ class BaseBackend(ABC):
     name: str
 
     @abstractmethod
-    def run(self, request: InferenceRequest) -> str:
-        """Run inference and return the model's text response."""
+    def run(self, request: InferenceRequest) -> dict:
+        """Run inference and return ``{"text": str, "logs": list[str]}``."""
         ...
 
 
@@ -30,22 +38,36 @@ class GeminiBackend(BaseBackend):
         self,
         name: str,
         model_id: str,
-        api_key: str,
+        api_key: str | None,
         thinking_budget: int | None = None,
+        vertexai_project: str | None = None,
+        vertexai_location: str | None = None,
     ):
-        if not api_key:
+        use_vertexai = bool(vertexai_project and vertexai_location)
+        if not use_vertexai and not api_key:
             raise ValueError(f"[{name}] GEMINI_API_KEY is not set. Add it to your .env file.")
+        
         self.name = name
         self.model_id = model_id
         self._api_key = api_key
         self._thinking_budget = thinking_budget
+        self._use_vertexai = use_vertexai
+        self._vertexai_project = vertexai_project
+        self._vertexai_location = vertexai_location
         self._client = None
 
     def _ensure_client(self) -> None:
         """Lazy-load the Gemini client on first use."""
         if self._client is None:
             from google import genai
-            self._client = genai.Client(api_key=self._api_key)
+            if not self._use_vertexai:
+                self._client = genai.Client(api_key=self._api_key)
+            else:
+                self._client = genai.Client(
+                    vertexai=True,
+                    project=self._vertexai_project,
+                    location=self._vertexai_location,
+                )
 
     def run(self, request: InferenceRequest) -> str:
         """Generate text output from a multimodal request."""
@@ -65,11 +87,12 @@ class GeminiBackend(BaseBackend):
                 )
 
         config_kwargs = {
-            "max_output_tokens": request.max_new_tokens,
             "temperature": request.temperature,
             "top_p": request.top_p,
             "system_instruction": request.system_prompt or None,
         }
+        if request.max_new_tokens is not None:
+            config_kwargs["max_output_tokens"] = request.max_new_tokens
         if self._thinking_budget is not None:
             config_kwargs["thinking_config"] = genai_types.ThinkingConfig(
                 thinking_budget=self._thinking_budget
@@ -78,7 +101,17 @@ class GeminiBackend(BaseBackend):
         response = self._client.models.generate_content(
             model=self.model_id, contents=parts, config=config,
         )
-        return response.text
+        logs: list[str] = []
+        usage = response.usage_metadata
+        if usage is not None:
+            thinking = getattr(usage, "thoughts_token_count", None)
+            logs.append(
+                f"USAGE prompt={usage.prompt_token_count} "
+                f"output={usage.candidates_token_count} "
+                f"total={usage.total_token_count} "
+                f"thinking={thinking}"
+            )
+        return {"text": response.text, "logs": logs}
 
 
 # ── OpenAI-compatible ─────────────────────────────────────────────────────────
@@ -123,12 +156,13 @@ class OpenAIBackend(BaseBackend):
         creation_kwargs = {
             "model": self.model_id,
             "messages": messages,
-            "max_tokens": request.max_new_tokens,
             "temperature": request.temperature,
             "top_p": request.top_p,
         }
+        if request.max_new_tokens is not None:
+            creation_kwargs["max_tokens"] = request.max_new_tokens
         response = self._client.chat.completions.create(**creation_kwargs)
-        return response.choices[0].message.content
+        return {"text": response.choices[0].message.content, "logs": []}
 
 
 # ── Transformers (in-process) ─────────────────────────────────────────────────
@@ -154,7 +188,6 @@ class TransformersBackend(BaseBackend):
         self.device = self._pick_device()
         self._model = None
         self._processor = None
-        self._use_device_map: bool = False
 
         self.torch_dtype = self._pick_torch_dtype()
 
@@ -167,7 +200,7 @@ class TransformersBackend(BaseBackend):
     @staticmethod
     def _pick_device() -> str:
         """Detect best available device: CUDA > MPS > CPU."""
-        import torch
+
         if torch.cuda.is_available():
             return "cuda"
         if torch.backends.mps.is_available():
@@ -176,12 +209,11 @@ class TransformersBackend(BaseBackend):
 
     def _pick_torch_dtype(self):
         """Pick compute dtype based on runtime device capabilities."""
-        import torch
 
         if self.device == "mps":
+            # Safe on M1+ Macs; use float16 instead on older/unsupported chips.
             return torch.bfloat16
-
-        if self.device == "cpu":
+        elif self.device == "cpu":
             return torch.float32
 
         # CUDA: prefer bfloat16, fall back to float16 on older GPUs.
@@ -232,27 +264,22 @@ class TransformersBackend(BaseBackend):
             f"(dtype={self.torch_dtype}, quantization={self.quantization_level}) …"
         )
 
+        quantization_config = self._build_quantization_config()
         load_kwargs = {
             "token": self.hf_token,
             "cache_dir": self.hf_cache,
             "dtype": self.torch_dtype,
             "trust_remote_code": True,
         }
-
-        if self.device == "cuda":
+        if quantization_config is not None:
             load_kwargs["device_map"] = "auto"
-            quantization_config = self._build_quantization_config()
-            if quantization_config is not None:
-                load_kwargs["quantization_config"] = quantization_config
-            self._use_device_map = True
-        else:
-            self._use_device_map = False
+            load_kwargs["quantization_config"] = quantization_config
 
         self._model = AutoModelForImageTextToText.from_pretrained(
             self.hf_model_id,
             **load_kwargs,
         )
-        if not self._use_device_map:
+        if quantization_config is None:
             self._model = self._model.to(self.device)
 
         self._model.eval()
@@ -261,13 +288,12 @@ class TransformersBackend(BaseBackend):
 
     def run(self, request: InferenceRequest) -> str:
         """Generate text output using local Transformers model."""
-        import torch
         self._ensure_loaded()
 
-        # Qwen3-VL expects images embedded directly in content entries.
-        # All other models (e.g. Gemma3) want a plain placeholder and images
-        # passed separately through the processor's `images` kwarg.
-        is_qwen_vl = "qwen" in self.hf_model_id.lower() and "vl" in self.hf_model_id.lower()
+        # Some models (e.g. Qwen VL) expect images embedded directly in content entries.
+        # Others (e.g. Gemma3) want a plain placeholder and images passed separately
+        # through the processor's `images` kwarg. Controlled by _INLINE_IMAGE_MODEL_PATTERNS.
+        uses_inline_images = any(p in self.hf_model_id.lower() for p in _INLINE_IMAGE_MODEL_PATTERNS)
         all_pil_images: list[Image.Image] = []
         content_list: list[dict] = []
 
@@ -276,7 +302,7 @@ class TransformersBackend(BaseBackend):
                 content_list.append({"type": "text", "text": block.text})
             elif isinstance(block, ImageBlock):
                 pil = block.load()
-                if is_qwen_vl:
+                if uses_inline_images:
                     content_list.append({"type": "image", "image": pil})
                 else:
                     all_pil_images.append(pil)
@@ -291,17 +317,17 @@ class TransformersBackend(BaseBackend):
         processor_kwargs: dict = {"text": [text], "return_tensors": "pt"}
         if all_pil_images:
             processor_kwargs["images"] = all_pil_images
-        input_device = "cuda:0" if (self._use_device_map and self.device == "cuda") else self.device
-        inputs = self._processor(**processor_kwargs).to(input_device)
+        inputs = self._processor(**processor_kwargs).to(self.device)
 
         generation_kwargs = {
-            "max_new_tokens": request.max_new_tokens,
             "do_sample": request.do_sample,
             "temperature": request.temperature if request.do_sample else None,
             "top_p": request.top_p if request.do_sample else None,
         }
+        if request.max_new_tokens is not None:
+            generation_kwargs["max_new_tokens"] = request.max_new_tokens
         with torch.no_grad():
             output_ids = self._model.generate(**inputs, **generation_kwargs)
 
         new_ids = output_ids[:, inputs["input_ids"].shape[-1]:]
-        return self._processor.batch_decode(new_ids, skip_special_tokens=True)[0]
+        return {"text": self._processor.batch_decode(new_ids, skip_special_tokens=True)[0], "logs": []}

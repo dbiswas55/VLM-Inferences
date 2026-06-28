@@ -1,19 +1,29 @@
 
-"""Simple entry point for running a single multimodal inference request."""
+"""
+inference.py
+------------
+Simple entry point for running a single multimodal inference request.
+
+Usage:
+    python src/inference.py
+
+Configure CLIENT_NAME, IMAGE_PATHS, and USER_PROMPT below before running.
+"""
 
 from time import time
 from pathlib import Path
 
-from config import Config
+from utils.config import Config
 from backends import get_backend_from_config
 from backends.request import TextBlock, ImageBlock, InferenceRequest
 
 
-
-
-# Available hostings: ollama, mlx_vlm, vllm, transformers, gemini, openai
-# Available models: gemma3-4b, gemma3-12b, qwen3vl-4b, qwen3vl-8b, gemini-flash-2.5lite, gemini-flash-2.5
-CLIENT_NAME = "ollama/gemma3-4b"  # Format: "hosting/model". Leave empty to use config 'active'.
+# ---------------------------------------------------------------------------
+# Configuration
+# Available hostings : gemini, gemini_vtx, gemini_oai, openai, anthropic, ollama, mlx_vlm, vllm, transformers
+# Available models   : gemma3-4b, gemma3-12b, qwen3vl-4b, qwen3vl-8b, flash-2.5, flash-2.5lite
+# ---------------------------------------------------------------------------
+CLIENT_NAME = "ollama/gemma3-4b"  # "hosting/model" — leave empty to use config 'active'
 DEBUG = True
 
 SEPARATOR = "=" * 72
@@ -24,10 +34,11 @@ IMAGE_PATHS = [
 ]
 
 SYSTEM_PROMPT = ""
-USER_PROMPT = "Summarize all the above slides and provide the main information shown."
+USER_PROMPT = "Describe the two images and then summarize the main information shown."
 
 
 def get_client(cfg: Config, debug: bool = False) -> dict:
+    """Resolve the target client config and optionally print its parameters."""
     client = cfg.get_client_by_name(CLIENT_NAME) if CLIENT_NAME else cfg.get_current_client()
     if debug:
         print(f"\n{SEPARATOR}")
@@ -61,6 +72,7 @@ def build_request_payload(
     image_paths: list[str],
     debug: bool = False,
 ) -> dict:
+    """Build the content list (images + text) that will be sent to the backend."""
     if debug:
         print(f"Prompt : {prompt}")
         print(f"Images : {', '.join(image_paths)}")
@@ -71,13 +83,13 @@ def build_request_payload(
         if not path.is_file():
             raise FileNotFoundError(f"Image file not found: {image_path}")
         content.append(ImageBlock(str(path)))
-        content.append(TextBlock("Describe this slide briefly."))
 
     content.append(TextBlock(prompt))
     return {"content": content, "system_prompt": system_prompt}
 
 
-def run_client(client: dict, payload: dict):
+def run_client(client: dict, payload: dict) -> None:
+    """Send the request to the backend, print the response and elapsed time."""
     request = InferenceRequest(
         content=payload["content"],
         system_prompt=payload["system_prompt"],
@@ -89,16 +101,21 @@ def run_client(client: dict, payload: dict):
     backend = get_backend_from_config(client)
 
     start_time = time()
-    answer = backend.run(request)
+    resp = backend.run(request)
     elapsed = time() - start_time
 
     print(f"Status : OK ({elapsed:.2f}s)")
     print("Model output shown below")
     print(f"{SEPARATOR}")
-    print(answer.strip())
+    print(resp["text"].strip())
+    if resp.get("logs"):
+        print(f"\n--- Usage ---")
+        for line in resp["logs"]:
+            print(line)
 
 
-def main(debug: bool = DEBUG):
+def main(debug: bool = DEBUG) -> None:
+    """Load config, build request payload, and run inference."""
     cfg = Config(CONFIG_PATH)
     client = get_client(cfg, debug=debug)
     payload = build_request_payload(SYSTEM_PROMPT, USER_PROMPT, IMAGE_PATHS, debug=debug)

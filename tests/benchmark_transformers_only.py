@@ -14,7 +14,7 @@ from pathlib import Path
 from statistics import mean
 from time import perf_counter
 
-from config import Config
+from utils.config import Config
 from backends import get_backend_from_config
 from backends.request import TextBlock, ImageBlock, InferenceRequest
 
