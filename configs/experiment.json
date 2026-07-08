@@ -130,36 +130,40 @@
   },
 
   "datasets": {
-    "vizsum": {
-      "name": "vizsum",
-      "root_dir": "input/vizsum",
-      "output_dir": "output/vizsum"
+    "demo_images": {
+      "name": "demo_images",
+      "root_dir": "input/images"
     }
   },
 
   "prompts": {
     "prompt_root": "src/prompts",
     "workflows": {
-      "basic_captioning": {
+
+      "onestep_summary": {
+        "_comment": "Single step — all images sent together, one combined summary returned.",
         "steps": [
           {
             "system": "",
-            "user": "basic_captioning/step1_user.txt"
+            "user": "summary/v1_prompt.txt"
           }
         ]
       },
-      "chain_of_thought": {
+
+      "multisteps_summary": {
+        "_comment": "Two steps — step 1 describes each image individually (parallel); step 2 synthesises via {image_summaries}.",
         "steps": [
           {
             "system": "",
-            "user": "chain_of_thought/step1_user.txt"
+            "user": "summary/v2_step1.txt"
           },
           {
             "system": "",
-            "user": "chain_of_thought/step2_user.txt"
+            "user": "summary/v2_step2.txt"
           }
         ]
       }
+
     }
   }
 }

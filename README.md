@@ -149,7 +149,12 @@ All settings live in [`configs/experiment.json`](configs/experiment.json). The s
     "prompt_root": "src/prompts",
     "workflows": {
       "basic_captioning": { "steps": [{ "system": "", "user": "basic_captioning/step1_user.txt" }] },
-      "chain_of_thought": { "steps": [/* multi-step workflow */] }
+      "onestep_summary": { "steps": [{ "system": "", "user": "summary/v1_prompt.txt" }] },
+      "multisteps_summary": { "steps": [
+          { "system": "", "user": "summary/v2_step1.txt" },
+          { "system": "", "user": "summary/v2_step2.txt" }
+        ]
+      }
     }
   }
 }

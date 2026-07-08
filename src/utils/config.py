@@ -89,7 +89,7 @@ class Config:
         """Return all steps for a workflow.
 
         Example:
-            steps = cfg.get_workflow_steps("chain_of_thought")  # → list of step dicts
+            steps = cfg.get_workflow_steps("multisteps_summary")  # → list of step dicts
         """
         return self.config["prompts"]["workflows"][workflow]["steps"]
 
@@ -99,8 +99,8 @@ class Config:
         step is 1-based (step=1 is the first step, step=2 is the second, etc.).
 
         Example:
-            step = cfg.get_step("chain_of_thought", 1)
-            # → {"system": "", "user": "chain_of_thought/step1_user.txt"}
+            step = cfg.get_step("multisteps_summary", 1)
+            # → {"system": "", "user": "summary/v2_step1.txt"}
         """
         return self.config["prompts"]["workflows"][workflow]["steps"][step - 1]
 
@@ -115,8 +115,8 @@ class Config:
           system prompt or an empty string).
 
         Example:
-            user_text   = cfg.get_step_text("chain_of_thought", 1, "user")
-            system_text = cfg.get_step_text("chain_of_thought", 1, "system")  # → ""
+            user_text   = cfg.get_step_text("multisteps_summary", 1, "user")
+            system_text = cfg.get_step_text("multisteps_summary", 1, "system")  # → ""
         """
         value = self.get_step(workflow, step)[prompt_type]
         if value and value.endswith(".txt"):
