@@ -1,13 +1,25 @@
-
 """
-inference.py
-------------
-Simple entry point for running a single multimodal inference request.
+test_backends.py
+================
+Run a single multimodal inference request against a configured backend.
 
-Usage:
-    python src/inference.py
+The smallest check that a client/backend is wired up correctly: resolve one
+client from configs/experiment.json, build one image + text request, send it,
+and print the response. For multi-step prompt workflows over a dataset, see
+test_workflows.py.
 
-Configure CLIENT_NAME, IMAGE_PATHS, and USER_PROMPT below before running.
+Configuration
+-------------
+  Top-level constants (edit directly in this file):
+    CLIENT_NAME   — client as "hosting/model", or "" to use config's active client
+    IMAGE_PATHS   — image files to send alongside the prompt
+    SYSTEM_PROMPT — optional system prompt ("" = none)
+    USER_PROMPT   — the instruction sent with the images
+    DEBUG         — if True, print the resolved client and request before running
+
+Usage
+-----
+    python src/test_backends.py
 """
 
 from time import time
@@ -18,25 +30,26 @@ from backends import get_backend_from_config
 from backends.request import TextBlock, ImageBlock, InferenceRequest
 
 
-# ---------------------------------------------------------------------------
-# Configuration
+# ── Top-level constants — edit these to control the request ─────────────────
 # Available hostings : gemini, gemini_vtx, gemini_oai, openai, anthropic, ollama, mlx_vlm, vllm, transformers
 # Available models   : gemma3-4b, gemma3-12b, qwen3vl-4b, qwen3vl-8b, flash-2.5, flash-2.5lite
-# ---------------------------------------------------------------------------
-CLIENT_NAME = "ollama/gemma3-4b"  # "hosting/model" — leave empty to use config 'active'
-DEBUG = True
+# Example client names : "ollama/gemma3-4b", "transformers/gemma3-4b", "transformers/qwen3vl-4b", "vllm/gemma3-12b", "gemini/flash-2.5", "gemini_vtx/flash-2.5"
 
-SEPARATOR = "=" * 72
+CLIENT_NAME = "ollama/gemma3-4b"        # "hosting/model", or "" to use experiment.json's active client
 CONFIG_PATH = "configs/experiment.json"
+DEBUG       = True                      # True = print resolved client params and request before running
+
 IMAGE_PATHS = [
     "input/images/slide_020.png",
     "input/images/slide_021.png",
 ]
-
 SYSTEM_PROMPT = ""
-USER_PROMPT = "Describe the two images and then summarize the main information shown."
+USER_PROMPT   = "Describe the two images and then summarize the main information shown."
+
+SEPARATOR = "=" * 72
 
 
+# ── Client resolution ────────────────────────────────────────────────────────
 def get_client(cfg: Config, debug: bool = False) -> dict:
     """Resolve the target client config and optionally print its parameters."""
     client = cfg.get_client_by_name(CLIENT_NAME) if CLIENT_NAME else cfg.get_current_client()
@@ -66,6 +79,7 @@ def get_client(cfg: Config, debug: bool = False) -> dict:
     return client
 
 
+# ── Payload construction ──────────────────────────────────────────────────────
 def build_request_payload(
     system_prompt: str,
     prompt: str,
@@ -88,6 +102,7 @@ def build_request_payload(
     return {"content": content, "system_prompt": system_prompt}
 
 
+# ── Inference ──────────────────────────────────────────────────────────────────
 def run_client(client: dict, payload: dict) -> None:
     """Send the request to the backend, print the response and elapsed time."""
     request = InferenceRequest(
@@ -114,6 +129,7 @@ def run_client(client: dict, payload: dict) -> None:
             print(line)
 
 
+# ── Main ─────────────────────────────────────────────────────────────────────
 def main(debug: bool = DEBUG) -> None:
     """Load config, build request payload, and run inference."""
     cfg = Config(CONFIG_PATH)
@@ -130,5 +146,6 @@ def main(debug: bool = DEBUG) -> None:
         print(f"Error  : {exc}")
 
 
+# ── Entry point ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     main()

@@ -35,13 +35,16 @@ VLM-Inferences/
 │   └── experiment.json          # All model, dataset, and workflow configuration
 ├── input/
 │   └── images/                  # Input images for inference
+├── output/                      # Per-item workflow results (created on run)
 ├── src/
-│   ├── inference.py             # Main entry point — run a multimodal inference
-│   ├── config.py                # Config loader with structured accessors
+│   ├── test_backends.py         # Run a single multimodal request (backend smoke test)
+│   ├── test_workflows.py        # Run a single-/multi-step workflow over a dataset
 │   ├── backends/
 │   │   ├── __init__.py          # Backend factory (get_backend_from_config)
 │   │   ├── backends.py          # BaseBackend, GeminiBackend, OpenAIBackend, TransformersBackend
 │   │   └── request.py           # TextBlock, ImageBlock, InferenceRequest
+│   ├── utils/
+│   │   └── config.py            # Config loader with structured accessors
 │   ├── prepare/
 │   │   └── prepare_backends.py  # Backend setup guide + HuggingFace model management
 │   └── prompts/                 # Prompt template files (referenced by workflows)
@@ -105,7 +108,11 @@ See [`src/prepare/prepare_backends.py`](src/prepare/prepare_backends.py) for the
 
 ### 5. Run Inference
 
-Edit the top of `src/inference.py` to select your client and prompt:
+Two entry points are provided. Both select a client via `CLIENT_NAME = "hosting/model"`
+(leave empty to use whichever client is set as `active` in the config).
+
+**Single request** — the quickest way to confirm a backend is wired up. Edit the
+constants at the top of [`src/test_backends.py`](src/test_backends.py):
 
 ```python
 CLIENT_NAME = "ollama/gemma3-4b"   # Format: "hosting/model"
@@ -113,14 +120,21 @@ IMAGE_PATHS = ["input/images/slide_020.png", "input/images/slide_021.png"]
 USER_PROMPT = "Describe the two images and then summarize the main information shown."
 ```
 
-Then run:
-
 ```bash
-cd src
-python inference.py
+python src/test_backends.py
 ```
 
-You can also leave `CLIENT_NAME` empty to use whichever client is set as `active` in the config.
+**Workflow over a dataset** — run a single- or multi-step prompt workflow (see
+[Workflows](#workflows)) over every item in a configured dataset:
+
+```bash
+python src/test_workflows.py                                   # defaults from the file
+python src/test_workflows.py --workflow onestep_summary --client gemini/flash-2.5
+python src/test_workflows.py --dataset demo_images --debug
+```
+
+If the dataset defines an `output_dir`, each item's results are saved to
+`<output_dir>/<workflow>/<item_id>.json`.
 
 ## Configuration
 
@@ -144,11 +158,16 @@ All settings live in [`configs/experiment.json`](configs/experiment.json). The s
     }
   },
   "processing": { "batch_size": 1, "output_format": "jsonl" },
-  "datasets": { ... },
+  "datasets": {
+    "demo_images": {
+      "name": "demo_images",
+      "root_dir": "input/images",     // images to process, relative to project root
+      "output_dir": "output/demo_images"  // where results are saved (omit to skip saving)
+    }
+  },
   "prompts": {
     "prompt_root": "src/prompts",
     "workflows": {
-      "basic_captioning": { "steps": [{ "system": "", "user": "basic_captioning/step1_user.txt" }] },
       "onestep_summary": { "steps": [{ "system": "", "user": "summary/v1_prompt.txt" }] },
       "multisteps_summary": { "steps": [
           { "system": "", "user": "summary/v2_step1.txt" },
@@ -164,7 +183,32 @@ All settings live in [`configs/experiment.json`](configs/experiment.json). The s
 
 ### Workflows
 
-The `prompts.workflows` section defines reusable multi-step prompt pipelines. Each step references a system and user prompt (inline string or path to a `.txt` file under `prompt_root`). This structure supports implementing different VLM workflows — basic captioning, chain-of-thought reasoning, or any custom pipeline you design.
+The `prompts.workflows` section defines reusable single- or multi-step prompt
+pipelines. Each step references a system and user prompt (inline string or path
+to a `.txt` file under `prompt_root`). `src/test_workflows.py` runs a workflow
+over every item in a dataset, feeding each step's output into the next.
+
+Each step's user template can reference two kinds of tags, filled only when the
+tag appears in that step:
+
+- **item tag** (e.g. `{images}`) — filled from the work item itself (its inputs).
+- **parsed tag** (e.g. `{response_text}`) — filled from the previous step's parsed
+  result. The default parser exposes its output as `{response_text}`; a step can
+  register a custom parser to expose additional or differently-named tags (the
+  shipped `multisteps_summary` uses this to pass `{image_summaries}` from step 1
+  into step 2). A parsed tag resolves only if that exact key comes back from the
+  parser, so keep parser output keys and template tags in sync.
+
+Two example workflows ship with the template:
+
+| Workflow | Steps | What it does |
+|---|---|---|
+| `onestep_summary` | 1 | All images sent together; one combined summary returned. |
+| `multisteps_summary` | 2 | Step 1 describes the images (parsed as `{image_summaries}`); step 2 synthesises them into one summary. |
+
+When a dataset defines `output_dir`, each item's results — every step's parsed
+tags (intermediate outputs plus the final `response_text`) — are saved to
+`<output_dir>/<workflow>/<item_id>.json`.
 
 ## Inference Request Format
 

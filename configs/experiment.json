@@ -132,7 +132,8 @@
   "datasets": {
     "demo_images": {
       "name": "demo_images",
-      "root_dir": "input/images"
+      "root_dir": "input/images",
+      "output_dir": "output/demo_images"
     }
   },
 

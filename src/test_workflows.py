@@ -17,7 +17,9 @@ For the configured dataset, this script:
   2. For each item, runs every workflow step in order (see process_item):
      build the prompt payload, run inference, parse the result.
   3. Feeds each step's parsed result forward as input to the next step.
-  4. Prints the final parsed result once each item's workflow completes.
+  4. Prints the final parsed result, and — if the dataset configures an
+     "output_dir" — saves every step's parsed tags (intermediate outputs
+     plus the final "response_text") to <output_dir>/<workflow>/<item_id>.json.
 
 Prompt tags
 -----------
@@ -44,7 +46,8 @@ Configuration
   Top-level constants (edit directly in this file):
     WORKFLOW    — workflow key in configs/experiment.json (prompts.workflows)
     CLIENT_NAME — override the active client, e.g. "ollama/gemma3-4b", or "" for default
-    DATASET     — dataset key in configs/experiment.json (datasets → <DATASET>.root_dir)
+    DATASET     — dataset key in configs/experiment.json (datasets → <DATASET>.root_dir;
+                  add "output_dir" there to save per-item results, else nothing is saved)
     DEBUG       — if True, write per-step payload snapshots to DEBUG_DIR
 
 Usage
@@ -58,6 +61,7 @@ from __future__ import annotations
 
 import re
 import sys
+import json
 import time
 import argparse
 from pathlib import Path
@@ -70,12 +74,12 @@ from backends.request import ImageBlock, InferenceRequest, TextBlock
 
 
 # ── Top-level constants — edit these to control which data is processed ─────
-WORKFLOW    = "multisteps_summary"
-CLIENT_NAME = "ollama/gemma3-4b"   # "hosting/model", or "" to use experiment.json's active client
+WORKFLOW    = "multisteps_summary"      # workflow key in configs/experiment.json → prompts.workflows
+CLIENT_NAME = "gemini_vtx/flash-2.5"    # See example client names in test_backends.py; "" = use experiment.json's active client
 CONFIG_PATH = "configs/experiment.json"
 
-DATASET     = "demo_images"        # dataset key in configs/experiment.json → "datasets"
-DEBUG       = True                # True = dump each step's payload to DEBUG_DIR before inference
+DATASET     = "demo_images"             # dataset key in configs/experiment.json → "datasets"
+DEBUG       = True                      # True = dump each step's payload to DEBUG_DIR before inference
 DEBUG_DIR   = "output/workflow_debug"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
@@ -86,11 +90,13 @@ def build_work_queue(dataset: dict, project_dir: Path) -> list[dict]:
     """Build the list of work items for one dataset.
 
     A work item is one unit the workflow runs over — here ``{"item_id",
-    "images"}``. This demo dataset is a flat folder of images, so its whole
-    root_dir becomes a single item named after the dataset. A real task
-    swaps this function for a loader that reads the dataset's own
-    metadata/manifest and yields many items (in whatever shape that task's
-    payload builder expects); the rest of the pipeline is unaffected.
+    "images"}``. ``item_id`` must be unique per item: it names that item's
+    saved output file (see run_pipeline). This demo dataset is a flat folder
+    of images, so its whole root_dir becomes a single item named after the
+    dataset. A real task swaps this function for a loader that reads the
+    dataset's own metadata/manifest and yields many items (with a unique
+    item_id each, in whatever shape that task's payload builder expects);
+    the rest of the pipeline is unaffected.
     """
     root_dir = project_dir / dataset["root_dir"]
     images = sorted(p for p in root_dir.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS) if root_dir.is_dir() else []
@@ -249,13 +255,16 @@ def process_item(
     Every step runs once over the item. A step's parsed result becomes
     ``prev_result`` for the next step, so a later step's template can only
     reference tags the previous step's parser actually returns (see
-    build_step_payload). The final step's parsed result must contain
-    "response_text" — it is what run_pipeline prints as the item's result.
+    build_step_payload).
 
-    Returns the final step's parsed result, e.g. ``{"response_text": str, ...}``.
+    Returns every step's parsed tags merged into one dict, so the result
+    holds both intermediate outputs (e.g. {image_summaries}) and the final
+    answer. The final step must produce "response_text" — the shared key
+    run_pipeline prints and treats as each workflow's final answer.
     """
     images = item["images"]
     prev_result: dict | None = None
+    outputs: dict = {}
 
     for step_idx, step in enumerate(step_prompts):
         print(f"    [step {step_idx + 1}/{len(step_prompts)}] running...")
@@ -266,8 +275,9 @@ def process_item(
         for line in resp.get("logs", []):
             print(f"      {line}")
         prev_result = parse_step_response(resp["text"], step["id"])
+        outputs.update(prev_result)
 
-    return prev_result
+    return outputs
 
 
 # ── Main pipeline ────────────────────────────────────────────────────────────
@@ -294,11 +304,18 @@ def run_pipeline(
     ]
     debug_dir = Path(DEBUG_DIR) / workflow if debug else None
 
+    # Results are saved only when the dataset configures an "output_dir";
+    # each item's merged outputs go to <output_dir>/<workflow>/<item_id>.json.
+    out_dir = cfg.project_dir / dataset["output_dir"] / workflow if dataset.get("output_dir") else None
+    if out_dir is not None:
+        out_dir.mkdir(parents=True, exist_ok=True)
+
     work_items = build_work_queue(dataset, cfg.project_dir)
 
     print(f"Dataset  : {dataset_name}  ({dataset['root_dir']})")
     print(f"Workflow : {workflow}  ({num_steps} step{'s' if num_steps > 1 else ''})")
     print(f"Client   : {client['hosting']}/{client['name']}  ->  {client['model_id']}")
+    print(f"Output   : {out_dir if out_dir is not None else '(not saving — no output_dir configured)'}")
     print(f"Queue    : {len(work_items)} item(s)\n")
 
     for item in work_items:
@@ -306,6 +323,9 @@ def run_pipeline(
         t0 = time.monotonic()
         result = process_item(step_prompts, item, client, backend, debug_dir)
         elapsed = time.monotonic() - t0
+
+        if out_dir is not None:
+            (out_dir / f"{item['item_id']}.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
 
         print(f"\n{'=' * 60}")
         print(f"RESULT — {item['item_id']}  ({elapsed:.1f}s)")
